@@ -1,70 +1,67 @@
-from dataclasses import asdict, dataclass, field
+from typing import Self
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from libreria_m4.excepciones import LibroInvalidoError
 
 
-@dataclass(frozen=True, order=True)
-class Autor:
-    """Define al autor del libro: ordena alfabéticamente por nombre y nacionalidad."""
+class Autor(BaseModel):
+    """Autor de un libro. Se ordena alfabéticamente por nombre y luego por nacionalidad."""
 
-    nombre: str
+    model_config = ConfigDict(
+        frozen=True,  # inmutable y "hasheable": se puede meter en un set
+        extra="forbid",  # rechaza campos que no estén declarados
+        str_strip_whitespace=True,  # quita espacios al inicio y al final de los textos
+    )
+
+    nombre: str = Field(min_length=1)
     nacionalidad: str = ""
 
-    def __post_init__(self) -> None:
-        if not self.nombre.strip():
-            raise LibroInvalidoError("El nombre del autor no puede estar vacío")
+    def __lt__(self, otro: "Autor") -> bool:
+        if not isinstance(otro, Autor):
+            return NotImplemented
+        return (self.nombre, self.nacionalidad) < (otro.nombre, otro.nacionalidad)
 
 
-@dataclass(order=True)
-class Libro:
-    """Define un libro del catálogo.
+class Libro(BaseModel):
+    """Libro del catálogo.
 
     Se ordena por año de publicación, luego por título y al final por ISBN.
-    El resto de campos no participan en las comparaciones.
     """
 
-    # Campos que definen el orden (en este orden)
-    año_publicacion: int
-    titulo: str
-    isbn: str
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+        validate_assignment=True,  # también valida al hacer libro.precio = ...
+    )
 
-    # Campos que no participan en la comparacion
-    autor: Autor = field(compare=False)
-    genero: list[str] = field(compare=False)
-    precio: float = field(compare=False)
-    en_stock: bool = field(compare=False)
-    cantidad_disponible: int = field(compare=False)
-    editorial: str = field(compare=False)
+    isbn: str = Field(min_length=1)
+    titulo: str = Field(min_length=1)
+    autor: Autor
+    genero: list[str]
+    año_publicacion: int = Field(ge=0, le=2100)
+    precio: float = Field(ge=0)
+    en_stock: bool
+    cantidad_disponible: int = Field(ge=0)
+    editorial: str
 
-    def __post_init__(self) -> None:
-        """Validaciones de contenido que antes hacía validar_libro()."""
-        if not self.isbn.strip():
-            raise LibroInvalidoError("El ISBN no puede estar vacío")
-
-        if not self.titulo.strip():
-            raise LibroInvalidoError("El título no puede estar vacío")
-
-        if self.precio < 0:
-            raise LibroInvalidoError("El precio no puede ser negativo")
-
-        if self.cantidad_disponible < 0:
-            raise LibroInvalidoError("La cantidad disponible no puede ser negativa")
-
-        if not 0 <= self.año_publicacion <= 2100:
-            raise LibroInvalidoError(f"El año de publicación ({self.año_publicacion}) no es válido")
+    def __lt__(self, otro: "Libro") -> bool:
+        if not isinstance(otro, Libro):
+            return NotImplemented
+        return (self.año_publicacion, self.titulo, self.isbn) < (
+            otro.año_publicacion,
+            otro.titulo,
+            otro.isbn,
+        )
 
     @classmethod
-    def desde_dict(cls, datos: dict) -> "Libro":
+    def desde_dict(cls, datos: dict) -> Self:
         """Crea un Libro a partir de un diccionario como los del archivo JSON."""
         try:
-            autor = Autor(**datos["autor"])
-            return cls(**{**datos, "autor": autor})
-        except KeyError as e:
-            raise LibroInvalidoError(f"Falta el campo requerido: {e}") from None
-        except TypeError as e:
-            raise LibroInvalidoError(f"Estructura de libro inválida: {e}") from None
+            return cls.model_validate(datos)
+        except ValidationError as e:
+            raise LibroInvalidoError(f"Libro inválido:\n{e}") from None
 
     def a_dict(self) -> dict:
         """Convierte el Libro (incluyendo su Autor) a diccionario para guardarlo en JSON."""
-        return asdict(self)
-    
+        return self.model_dump()

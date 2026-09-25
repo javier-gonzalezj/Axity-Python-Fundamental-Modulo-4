@@ -3,7 +3,7 @@ def capturar_libro(data: dict) -> dict:
     print("\n📖 Nuevo libro")
     print("-" * 40)
 
-    isbn_existente = {libro["isbn"] for libro in data["libros"]}
+    isbn_existente = {libro.isbn for libro in data["libros"]}
     while True:
         isbn = input("ISBN: ").strip()
         if isbn in isbn_existente:
@@ -79,24 +79,24 @@ def filtrar_libros(
 
     if autor is not None:
         resultado = [
-            libro for libro in resultado if autor.lower() in libro["autor"]["nombre"].lower()
+            libro for libro in resultado if autor.lower() in libro.autor.nombre.lower()
         ]
 
     if genero is not None:
         resultado = [
             libro
             for libro in resultado
-            if any(genero.lower() in g.lower() for g in libro["genero"])
+            if any(genero.lower() in g.lower() for g in libro.genero)
         ]
 
     if en_stock is not None:
-        resultado = [libro for libro in resultado if libro["en_stock"] == en_stock]
+        resultado = [libro for libro in resultado if libro.en_stock == en_stock]
 
     if precio_max is not None:
-        resultado = [libro for libro in resultado if libro["precio"] <= precio_max]
+        resultado = [libro for libro in resultado if libro.precio <= precio_max]
 
     if año_min is not None:
-        resultado = [libro for libro in resultado if libro["año_publicacion"] >= año_min]
+        resultado = [libro for libro in resultado if libro.año_publicacion >= año_min]
 
     return resultado
 
