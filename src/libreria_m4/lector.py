@@ -1,16 +1,7 @@
-import functools
 import json
-import logging
 import math
-import os
-import random
-import tempfile
-import time
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
 from itertools import batched
 from pathlib import Path
-from typing import TextIO
 
 from libreria_m4.excepciones import (
     ArchivoJSONInvalidoError,
@@ -19,6 +10,7 @@ from libreria_m4.excepciones import (
     LibroInvalidoError,
     PermisoArchivoError,
 )
+from libreria_m4.utilidades import escritura_atomica
 
 CAMPOS_LIBRO = {
     "isbn": str,
@@ -31,78 +23,6 @@ CAMPOS_LIBRO = {
     "cantidad_disponible": int,
     "editorial": str,
 }
-
-log = logging.getLogger(__name__)
-
-
-def reintentar(
-    intentos: int = 3,
-    espera_inicial: float = 0.5,
-    factor: float = 2.0,
-    espera_maxima: float = 10.0,
-    excepciones: tuple[type[BaseException], ...] = (Exception,),
-) -> Callable:
-    """Reintenta la función decorada con backoff exponencial y jitter.
-
-    Solo reintenta si la excepción es de alguno de los tipos en `excepciones`.
-    Tras el último intento fallido, la excepción se propaga sin cambios.
-    """
-    if intentos < 1:
-        raise ValueError("intentos debe ser al menos 1")
-
-    def decorador(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def envoltura(*args, **kwargs):
-            for intento in range(1, intentos + 1):
-                try:
-                    return func(*args, **kwargs)
-                except excepciones as e:
-                    if intento == intentos:
-                        log.error("%s falló tras %d intentos", func.__name__, intentos)
-                        raise
-                    espera = min(espera_inicial * factor ** (intento - 1), espera_maxima)
-                    espera = random.uniform(0, espera)
-                    log.warning(
-                        "%s falló (%s). Intento %d/%d, reintentando en %.2fs",
-                        func.__name__,
-                        e,
-                        intento,
-                        intentos,
-                        espera,
-                    )
-                    time.sleep(espera)
-
-        return envoltura
-
-    return decorador
-
-
-@reintentar(intentos=3, espera_inicial=0.2, excepciones=(PermissionError,))
-def _reemplazar(origen: str | Path, destino: str | Path) -> None:
-    """Reemplaza `destino` por `origen`.
-
-    En Windows, os.replace puede fallar con PermissionError si otro proceso
-    (antivirus, editor, indexador) tiene el archivo abierto un instante.
-    """
-    os.replace(origen, destino)
-
-
-@contextmanager
-def escritura_atomica(ruta: str | Path, encoding: str = "utf-8") -> Iterator[TextIO]:
-    """Escribe en un archivo temporal y reemplaza `ruta` solo si todo salió bien.
-
-    Si ocurre un error durante la escritura, el archivo original queda intacto.
-    """
-    ruta = Path(ruta)
-    fd, tmp = tempfile.mkstemp(dir=ruta.parent, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding=encoding) as f:
-            yield f
-        _reemplazar(tmp, ruta)
-    except BaseException:
-        os.remove(tmp)
-        raise
-
 
 def validar_libro(libro: dict) -> None:
     """Valida que el diccionario tenga la estructura y tipos esperados de un libro.
